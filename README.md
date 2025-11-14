@@ -19,8 +19,8 @@ Follow these steps to get the project up and running on your local machine.
 ### 1. Clone the Repository
 
 ```bash
-git clone <your-repository-url>
-cd express-prisma
+git clone https://github.com/danielreinhard1129/express-finpro-boilerplate
+cd express-finpro-boilerplate
 ```
 
 ### 2. Install Dependencies
