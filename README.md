@@ -9,7 +9,6 @@ This project is a robust boilerplate for building REST APIs using Express.js, Ty
 *   **ORM**: [Prisma](https://www.prisma.io/) for intuitive, type-safe database access.
 *   **Validation**: [class-validator](https://github.com/typestack/class-validator) and [class-transformer](https://github.com/typestack/class-transformer) for validating and transforming incoming request bodies.
 *   **Environment Variables**: [dotenv](https://github.com/motdotla/dotenv) to load environment variables from a `.env` file.
-*   **Live Reload**: Nodemon for automatically restarting the server during development.
 *   **CORS**: Pre-configured CORS support.
 
 ## Getting Started
@@ -60,29 +59,13 @@ If you prefer to only generate the client without running migrations, use:
 npx prisma generate
 ```
 
-## Available Scripts
-
-The `package.json` file includes several scripts to help with development:
-
 ### Run in Development Mode
-
-This command starts the server with `nodemon`, which automatically watches for file changes in the `src` directory and restarts the server.
 
 ```bash
 npm run dev
 ```
 
-### Build for Production
-
-This command transpiles the TypeScript code from the `src` directory into JavaScript in the `dist` directory.
-
-```bash
-npm run build
-```
-
 ### Start in Production Mode
-
-This command runs the compiled JavaScript application from the `dist` directory. Make sure you have run `npm run build` first.
 
 ```bash
 npm run start
