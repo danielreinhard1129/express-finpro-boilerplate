@@ -1,11 +1,12 @@
-import { PrismaService } from "../prisma/prisma.service";
+import { PrismaClient } from "../../../generated/prisma/client";
+import { prisma } from "../../lib/prisma";
 import { CreateSampleDTO } from "./dto/create-sample.dto";
 
 export class SampleService {
-  private prisma: PrismaService;
+  private prisma: PrismaClient;
 
   constructor() {
-    this.prisma = new PrismaService();
+    this.prisma = prisma;
   }
 
   getSamples = async () => {
