@@ -6,7 +6,10 @@ import { fileURLToPath } from "node:url";
 import "reflect-metadata";
 import { PORT } from "./config/env.js";
 import { loggerHttp } from "./lib/logger-http.js";
-import { errorMiddleware } from "./middlewares/error.middleware.js";
+import {
+  errorMiddleware,
+  notFoundMiddleware,
+} from "./middlewares/error.middleware.js";
 
 export class App {
   app: Express;
@@ -14,7 +17,11 @@ export class App {
   constructor() {
     this.app = express();
     this.configure();
-    this.handleError();
+  }
+
+  async initialize() {
+    await this.registerModules();
+    this.registerErrorMiddleware();
   }
 
   private configure() {
@@ -46,12 +53,12 @@ export class App {
     }
   }
 
-  private handleError() {
+  private registerErrorMiddleware() {
     this.app.use(errorMiddleware);
+    this.app.use(notFoundMiddleware);
   }
 
-  public async start() {
-    await this.registerModules();
+  public start() {
     this.app.listen(PORT, () => {
       console.log(`Server running on port: ${PORT}`);
     });
