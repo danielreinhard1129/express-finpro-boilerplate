@@ -1,0 +1,47 @@
+# Dependencies
+node_modules
+
+# Environment files (security risk)
+.env
+.env.*
+
+# Git
+.git
+.gitignore
+
+# Build outputs
+dist
+
+# Generated files
+generated
+
+# Docker-related (postgres data volume)
+docker
+
+# Tooling
+.husky
+.vscode
+.idea
+
+# Config files not needed in container
+.prettierrc
+.prettierignore
+commitlint.config.cjs
+.eslintrc*
+
+# Documentation
+README.md
+*.md
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+coverage
+
+# Test files
+**/*.test.ts
+**/*.spec.ts
+__tests__
