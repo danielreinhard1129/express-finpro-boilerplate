@@ -1,14 +1,12 @@
 import cors from "cors";
 import express, { Express } from "express";
+import { readdir, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import "reflect-metadata";
 import { PORT } from "./config/env.js";
 import { loggerHttp } from "./lib/logger-http.js";
-import { prisma } from "./lib/prisma.js";
 import { errorMiddleware } from "./middlewares/error.middleware.js";
-import { ValidationMiddleware } from "./middlewares/validation.middleware.js";
-import { SampleController } from "./modules/sample/sample.controller.js";
-import { SampleRouter } from "./modules/sample/sample.router.js";
-import { SampleService } from "./modules/sample/sample.service.js";
 
 export class App {
   app: Express;
@@ -16,7 +14,6 @@ export class App {
   constructor() {
     this.app = express();
     this.configure();
-    this.registerModules();
     this.handleError();
   }
 
@@ -26,33 +23,35 @@ export class App {
     this.app.use(express.json());
   }
 
-  private registerModules() {
-    // shared dependency
-    const prismaClient = prisma;
+  private async registerModules() {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    const modulesDir = join(__dirname, "modules");
 
-    // services
-    const sampleService = new SampleService(prismaClient);
+    const moduleDirs = await readdir(modulesDir, { withFileTypes: true });
 
-    // controllers
-    const sampleController = new SampleController(sampleService);
+    for (const dir of moduleDirs) {
+      if (!dir.isDirectory()) continue;
 
-    // middlewares
-    const validationMiddleware = new ValidationMiddleware();
+      const indexPath = join(modulesDir, dir.name, "index.ts");
 
-    // routers
-    const sampleRouter = new SampleRouter(
-      sampleController,
-      validationMiddleware,
-    );
+      // Check if file exists - stat rejects if file doesn't exist
+      if (await stat(indexPath).catch(() => null)) {
+        const module = await import(`file://${indexPath}`);
 
-    this.app.use("/samples", sampleRouter.getRouter());
+        if (typeof module.register === "function") {
+          module.register(this.app);
+        }
+      }
+    }
   }
 
   private handleError() {
     this.app.use(errorMiddleware);
   }
 
-  public start() {
+  public async start() {
+    await this.registerModules();
     this.app.listen(PORT, () => {
       console.log(`Server running on port: ${PORT}`);
     });
