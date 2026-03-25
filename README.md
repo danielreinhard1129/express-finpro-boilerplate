@@ -4,19 +4,200 @@ This project is a robust boilerplate for building REST APIs using Express.js, Ty
 
 ## Features
 
-- **Framework**: [Express.js](https://expressjs.com/) for building the web server and APIs.
-- **Language**: [TypeScript](https://www.typescriptlang.org/) for static typing and a better development experience.
-- **ORM**: [Prisma](https://www.prisma.io/) for intuitive, type-safe database access with PostgreSQL adapter.
-- **Validation**: [class-validator](https://github.com/typestack/class-validator) and [class-transformer](https://github.com/typestack/class-transformer) for validating and transforming incoming request bodies.
-- **Environment Variables**: [dotenv](https://github.com/motdotla/dotenv) to load environment variables from a `.env` file.
-- **CORS**: Pre-configured CORS support.
-- **Docker**: Ready-to-use Docker configurations for both development and production environments.
-- **Code Quality**: Pre-configured Prettier for code formatting and Husky for Git hooks.
-- **Conventional Commits**: Enforced commit message standards using Commitlint.
+- **Framework**: [Express.js](https://expressjs.com/) 5.x for building the web server and APIs
+- **Language**: [TypeScript](https://www.typescriptlang.org/) for static typing and a better development experience
+- **ORM**: [Prisma](https://www.prisma.io/) 7.x with PostgreSQL adapter (`@prisma/adapter-pg`) for intuitive, type-safe database access
+- **Dynamic Module Registration**: Modules in `/src/modules/` are automatically loaded and registered
+- **Validation**: [class-validator](https://github.com/typestack/class-validator) and [class-transformer](https://github.com/typestack/class-transformer) for validating and transforming incoming request bodies
+- **Environment Variables**: [dotenv](https://github.com/motdotla/dotenv) to load environment variables from a `.env` file
+- **CORS**: Pre-configured CORS support
+- **Logging**: [Pino](https://getpino.io/) with request ID tracking for structured logging
+- **Error Handling**: Centralized error handling with 404 Not Found middleware
+- **Docker**: Ready-to-use Docker configuration for PostgreSQL database
+- **Code Quality**: Pre-configured Prettier for code formatting and Husky for Git hooks
+- **Conventional Commits**: Enforced commit message standards using Commitlint
+
+## Project Structure
+
+```
+src/
+├── app.ts                            # Main Express application with dynamic module loading
+├── index.ts                          # Application entry point
+├── config/                           # Configuration files
+│   └── env.ts                        # Environment variables (PORT, DATABASE_URL)
+├── lib/                              # Shared libraries
+│   ├── prisma.ts                     # Prisma client setup
+│   ├── logger.ts                     # Pino logger configuration
+│   └── logger-http.ts                # HTTP request logger
+├── middlewares/                      # Express middlewares
+│   ├── validation.middleware.ts      # Request body validation
+│   └── error.middleware.ts           # Error & 404 handling
+├── modules/                          # Feature modules (auto-discovered)
+│   └── sample/                       # Sample module (use as reference)
+│       ├── dto/                      # Data Transfer Objects
+│       │   └── create-sample.dto.ts
+│       ├── index.ts                  # Module registration
+│       ├── sample.service.ts         # Business logic
+│       ├── sample.controller.ts      # HTTP handlers
+│       └── sample.router.ts          # Route definitions
+└── utils/                            # Utility functions
+    └── api-error.ts                  # Custom error class
+```
+
+## Architecture
+
+### Dynamic Module Registration
+
+Modules in the `/src/modules/` directory are automatically discovered and loaded at application startup. Each module follows a consistent structure:
+
+- **Service Layer**: Contains business logic and database operations
+- **Controller Layer**: Handles HTTP requests and responses
+- **Router Layer**: Defines routes and applies middleware (validation, etc.)
+- **DTO Layer**: Data Transfer Objects with validation rules using class-validator
+
+### Middleware Chain
+
+Requests flow through the following middleware chain:
+
+1. **CORS** - Cross-origin resource sharing
+2. **Logging** - Pino HTTP logger with request ID tracking
+3. **Validation** - Request body validation (when applicable)
+4. **Controller** - Route handler
+5. **Error Handler** - Centralized error handling
+
+## Creating a New Module
+
+This boilerplate uses dynamic module registration. Simply create a new folder in `/src/modules/` with an `index.ts` file that exports a `register()` function - the module will be automatically loaded.
+
+### Step-by-Step: Creating a "Products" Module
+
+1. **Create the module directory:**
+
+```bash
+mkdir -p src/modules/products/dto
+```
+
+2. **Create the Service** (`src/modules/products/products.service.ts`):
+
+```typescript
+import { PrismaClient } from "../../../generated/prisma/client.js";
+
+export class ProductService {
+  constructor(private prisma: PrismaClient) {}
+
+  async getProducts() {
+    return this.prisma.product.findMany();
+  }
+
+  async createProduct(data: { name: string; price: number }) {
+    return this.prisma.product.create({ data });
+  }
+}
+```
+
+3. **Create the Controller** (`src/modules/products/products.controller.ts`):
+
+```typescript
+import { Response } from "express";
+import { ProductService } from "./products.service.js";
+
+export class ProductController {
+  constructor(private service: ProductService) {}
+
+  getProducts = async (req: any, res: Response) => {
+    const products = await this.service.getProducts();
+    res.json(products);
+  };
+
+  createProduct = async (req: any, res: Response) => {
+    const product = await this.service.createProduct(req.body);
+    res.json(product);
+  };
+}
+```
+
+4. **Create the Router** (`src/modules/products/products.router.ts`):
+
+```typescript
+import { Router } from "express";
+import { ProductController } from "./products.controller.js";
+import { ValidationMiddleware } from "../../middlewares/validation.middleware.js";
+import { CreateProductDTO } from "./dto/create-product.dto.js";
+
+export class ProductRouter {
+  constructor(
+    private controller: ProductController,
+    private validation: ValidationMiddleware,
+  ) {}
+
+  getRouter(): Router {
+    const router = Router();
+
+    router.get("/", this.controller.getProducts);
+    router.post(
+      "/",
+      this.validation.validate(CreateProductDTO),
+      this.controller.createProduct,
+    );
+
+    return router;
+  }
+}
+```
+
+5. **Create the DTO** (`src/modules/products/dto/create-product.dto.ts`):
+
+```typescript
+import { IsNotEmpty, IsNumber, IsString } from "class-validator";
+
+export class CreateProductDTO {
+  @IsNotEmpty()
+  @IsString()
+  name!: string;
+
+  @IsNotEmpty()
+  @IsNumber()
+  price!: number;
+}
+```
+
+6. **Create the Registration File** (`src/modules/products/index.ts`):
+
+```typescript
+import { Express } from "express";
+import { prisma } from "../../lib/prisma.js";
+import { ValidationMiddleware } from "../../middlewares/validation.middleware.js";
+import { ProductController } from "./products.controller.js";
+import { ProductRouter } from "./products.router.js";
+import { ProductService } from "./products.service.js";
+
+export function register(app: Express) {
+  const service = new ProductService(prisma);
+  const controller = new ProductController(service);
+  const router = new ProductRouter(controller, new ValidationMiddleware());
+  app.use("/products", router.getRouter());
+}
+```
+
+7. **That's it!** Start the server and your endpoints will be available:
+
+```bash
+npm run dev
+# Endpoints: GET /products, POST /products
+```
+
+### How Auto-Registration Works
+
+The `App` class in `src/app.ts` scans the `/src/modules/` directory at startup:
+
+1. Finds all subdirectories in `modules/`
+2. Looks for an `index.ts` file in each
+3. Imports the module
+4. Calls the exported `register(app)` function
+
+No manual imports or registrations needed - just create the folder and `index.ts` file!
 
 ## Getting Started
-
-Follow these steps to get the project up and running on your local machine.
 
 ### 1. Clone the Repository
 
@@ -27,8 +208,6 @@ cd express-finpro-boilerplate
 
 ### 2. Install Dependencies
 
-Install all the required project dependencies using npm.
-
 ```bash
 npm install
 ```
@@ -37,11 +216,7 @@ This will also set up Husky Git hooks automatically via the `prepare` script.
 
 ### 3. Set Up Environment Variables
 
-This project uses two different environment configurations:
-
-#### For Local Development
-
-Create a `.env` file in the root of the project for local development:
+Create a `.env` file in the root of the project:
 
 ```bash
 cp .env.example .env
@@ -57,61 +232,33 @@ PORT=8000
 DATABASE_URL="postgresql://postgres:admin@localhost:6543/postgres"
 ```
 
-**Note**: The local database runs on port `6543` to avoid conflicts with other PostgreSQL instances.
+**Note**: The database runs on port `6543` to avoid conflicts with other PostgreSQL instances.
 
-#### For Production (Docker)
+### 4. Start PostgreSQL with Docker
 
-Create a `.env.prod` file for production deployment:
+Start the PostgreSQL container:
 
 ```bash
-cp .env.prod.example .env.prod
+npm run docker:up
 ```
 
-Or create it manually with the following content:
+### 5. Set Up the Database
 
-```env
-# APP
-NODE_ENV=production
-PORT=8000
-
-# DB
-POSTGRES_PASSWORD=yourpass
-DATABASE_URL="postgresql://postgres:yourpass@postgres:5432/postgres"
-```
-
-**Important**:
-
-- Replace `yourpass` with a strong, secure password
-- The production environment uses `postgres` as the hostname (Docker service name)
-- The production database runs on the default PostgreSQL port `5432` inside the Docker network
-
-### 4. Set Up the Database
-
-#### Local Development
-
-Run the Prisma migration command to create the database schema based on your `prisma/schema.prisma` file.
+Run Prisma migrations to create the database schema:
 
 ```bash
 npx prisma migrate dev
 ```
 
-If you prefer to only generate the client without running migrations, use:
+Or generate the Prisma Client without running migrations:
 
 ```bash
 npx prisma generate
 ```
 
-#### Production (Docker)
-
-Database migrations will run automatically when you start the Docker production environment, or you can run them manually:
-
-```bash
-npm run db:deploy
-```
-
 ## Running the Application
 
-### Development Mode (Local)
+### Development Mode
 
 Run the application in development mode with hot-reload:
 
@@ -132,48 +279,24 @@ npm run start
 
 ## Docker Support
 
-This project includes Docker configurations for both development and production environments.
+This project includes Docker configuration for the PostgreSQL database. The application runs locally while the database runs in a container.
 
-### Development with Docker
-
-Start the development environment (uses `.env` file):
+### Start PostgreSQL
 
 ```bash
-npm run docker-dev:up
+npm run docker:up
 ```
 
-Stop the development environment:
+### Stop PostgreSQL
 
 ```bash
-npm run docker-dev:down
+npm run docker:down
 ```
 
-### Production with Docker
-
-Start the production environment (uses `.env.prod` file):
+### View Logs
 
 ```bash
-npm run docker-prod:up
-```
-
-View production logs:
-
-```bash
-npm run docker-prod:logs
-```
-
-Stop the production environment:
-
-```bash
-npm run docker-prod:down
-```
-
-### Database Deployment
-
-Deploy database migrations and generate Prisma Client (useful for CI/CD):
-
-```bash
-npm run db:deploy
+npm run docker:logs
 ```
 
 ## Code Quality
@@ -236,33 +359,57 @@ If your commit message doesn't follow the conventional format, the commit will b
 - `npm run start` - Start the production server
 - `npm run dev` - Start the development server with hot-reload
 - `npm run db:deploy` - Run Prisma migrations and generate client
-- `npm run docker-dev:up` - Start Docker development environment
-- `npm run docker-dev:down` - Stop Docker development environment
-- `npm run docker-prod:up` - Build and start Docker production environment
-- `npm run docker-prod:down` - Stop Docker production environment
-- `npm run docker-prod:logs` - View Docker production logs
+- `npm run docker:up` - Start PostgreSQL container with Docker
+- `npm run docker:down` - Stop Docker containers
+- `npm run docker:logs` - View Docker logs
 - `npm run format` - Format all files with Prettier
 - `npm run format:check` - Check formatting without making changes
 
-## Environment Variables Explained
+## Environment Variables
 
-### Local Development (`.env`)
+| Variable       | Description                        | Default |
+| -------------- | ---------------------------------- | ------- |
+| `PORT`         | Port number for the Express server | `8000`  |
+| `DATABASE_URL` | PostgreSQL connection string       | -       |
 
-- Uses `localhost:6543` to connect to the database
-- Suitable for local development without Docker
-- Port `6543` avoids conflicts with system PostgreSQL installations
+**Example:**
 
-### Production (`.env.prod`)
+```env
+PORT=8000
+DATABASE_URL="postgresql://postgres:admin@localhost:6543/postgres"
+```
 
-- Uses `postgres:5432` as the database host (Docker service name)
-- Requires `POSTGRES_PASSWORD` for the PostgreSQL container
-- Used by `docker-compose.prod.yml`
-- Runs on default PostgreSQL port inside Docker network
+## Database
+
+This project uses Prisma 7.x with the PostgreSQL adapter (`@prisma/adapter-pg`) for type-safe database access. The PostgreSQL database runs in a Docker container on port `6543`.
+
+### Running Migrations
+
+**Development:**
+
+```bash
+npx prisma migrate dev
+```
+
+**Production:**
+
+```bash
+npm run db:deploy
+```
+
+### Viewing Database
+
+You can use Prisma Studio to view and edit your database data:
+
+```bash
+npx prisma studio
+```
 
 ## Security Notes
 
 ⚠️ **Important Security Practices:**
 
-1. Never commit `.env` or `.env.prod` files to version control
+1. Never commit `.env` files to version control
 2. Use strong passwords for production databases
-3. Use different credentials for development and production
+3. Keep dependencies updated regularly
+4. Review and audit middleware configurations
