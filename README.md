@@ -7,7 +7,7 @@ This project is a robust boilerplate for building REST APIs using Express.js, Ty
 - **Framework**: [Express.js](https://expressjs.com/) 5.x for building the web server and APIs
 - **Language**: [TypeScript](https://www.typescriptlang.org/) for static typing and a better development experience
 - **ORM**: [Prisma](https://www.prisma.io/) 7.x with PostgreSQL adapter (`@prisma/adapter-pg`) for intuitive, type-safe database access
-- **Dynamic Module Registration**: Modules in `/src/modules/` are automatically loaded and registered
+- **Explicit Module Registration**: Modules in `/src/modules/` are manually registered in `app.ts` for clear dependency management
 - **Validation**: [class-validator](https://github.com/typestack/class-validator) and [class-transformer](https://github.com/typestack/class-transformer) for validating and transforming incoming request bodies
 - **Environment Variables**: [dotenv](https://github.com/motdotla/dotenv) to load environment variables from a `.env` file
 - **CORS**: Pre-configured CORS support
@@ -21,7 +21,7 @@ This project is a robust boilerplate for building REST APIs using Express.js, Ty
 
 ```
 src/
-├── app.ts                            # Main Express application with dynamic module loading
+├── app.ts                            # Main Express application with module registration
 ├── index.ts                          # Application entry point
 ├── config/                           # Configuration files
 │   └── env.ts                        # Environment variables (PORT, DATABASE_URL)
@@ -32,11 +32,10 @@ src/
 ├── middlewares/                      # Express middlewares
 │   ├── validation.middleware.ts      # Request body validation
 │   └── error.middleware.ts           # Error & 404 handling
-├── modules/                          # Feature modules (auto-discovered)
+├── modules/                          # Feature modules (explicitly registered)
 │   └── sample/                       # Sample module (use as reference)
 │       ├── dto/                      # Data Transfer Objects
 │       │   └── create-sample.dto.ts
-│       ├── index.ts                  # Module registration
 │       ├── sample.service.ts         # Business logic
 │       ├── sample.controller.ts      # HTTP handlers
 │       └── sample.router.ts          # Route definitions
@@ -46,9 +45,9 @@ src/
 
 ## Architecture
 
-### Dynamic Module Registration
+### Explicit Module Registration
 
-Modules in the `/src/modules/` directory are automatically discovered and loaded at application startup. Each module follows a consistent structure:
+Modules in the `/src/modules/` directory are manually registered in `src/app.ts`. Each module follows a consistent structure:
 
 - **Service Layer**: Contains business logic and database operations
 - **Controller Layer**: Handles HTTP requests and responses
@@ -57,17 +56,18 @@ Modules in the `/src/modules/` directory are automatically discovered and loaded
 
 ### Middleware Chain
 
-Requests flow through the following middleware chain:
+Requests flow through the following middleware chain (configured in `app.ts` → `configure()` method):
 
 1. **CORS** - Cross-origin resource sharing
 2. **Logging** - Pino HTTP logger with request ID tracking
-3. **Validation** - Request body validation (when applicable)
-4. **Controller** - Route handler
+3. **JSON Parser** - Express JSON body parser
+4. **Module Routes** - Registered routes with validation middleware
 5. **Error Handler** - Centralized error handling
+6. **404 Handler** - Not found middleware
 
 ## Creating a New Module
 
-This boilerplate uses dynamic module registration. Simply create a new folder in `/src/modules/` with an `index.ts` file that exports a `register()` function - the module will be automatically loaded.
+This boilerplate uses explicit module registration. Modules are manually registered in `src/app.ts` following a clear dependency injection pattern.
 
 ### Step-by-Step: Creating a "Products" Module
 
@@ -77,75 +77,7 @@ This boilerplate uses dynamic module registration. Simply create a new folder in
 mkdir -p src/modules/products/dto
 ```
 
-2. **Create the Service** (`src/modules/products/products.service.ts`):
-
-```typescript
-import { PrismaClient } from "../../../generated/prisma/client.js";
-
-export class ProductService {
-  constructor(private prisma: PrismaClient) {}
-
-  async getProducts() {
-    return this.prisma.product.findMany();
-  }
-
-  async createProduct(data: { name: string; price: number }) {
-    return this.prisma.product.create({ data });
-  }
-}
-```
-
-3. **Create the Controller** (`src/modules/products/products.controller.ts`):
-
-```typescript
-import { Response } from "express";
-import { ProductService } from "./products.service.js";
-
-export class ProductController {
-  constructor(private service: ProductService) {}
-
-  getProducts = async (req: any, res: Response) => {
-    const products = await this.service.getProducts();
-    res.json(products);
-  };
-
-  createProduct = async (req: any, res: Response) => {
-    const product = await this.service.createProduct(req.body);
-    res.json(product);
-  };
-}
-```
-
-4. **Create the Router** (`src/modules/products/products.router.ts`):
-
-```typescript
-import { Router } from "express";
-import { ProductController } from "./products.controller.js";
-import { ValidationMiddleware } from "../../middlewares/validation.middleware.js";
-import { CreateProductDTO } from "./dto/create-product.dto.js";
-
-export class ProductRouter {
-  constructor(
-    private controller: ProductController,
-    private validation: ValidationMiddleware,
-  ) {}
-
-  getRouter(): Router {
-    const router = Router();
-
-    router.get("/", this.controller.getProducts);
-    router.post(
-      "/",
-      this.validation.validate(CreateProductDTO),
-      this.controller.createProduct,
-    );
-
-    return router;
-  }
-}
-```
-
-5. **Create the DTO** (`src/modules/products/dto/create-product.dto.ts`):
+2. **Create the DTO** (`src/modules/products/dto/create-product.dto.ts`):
 
 ```typescript
 import { IsNotEmpty, IsNumber, IsString } from "class-validator";
@@ -161,21 +93,112 @@ export class CreateProductDTO {
 }
 ```
 
-6. **Create the Registration File** (`src/modules/products/index.ts`):
+3. **Create the Service** (`src/modules/products/products.service.ts`):
 
 ```typescript
-import { Express } from "express";
-import { prisma } from "../../lib/prisma.js";
-import { ValidationMiddleware } from "../../middlewares/validation.middleware.js";
-import { ProductController } from "./products.controller.js";
-import { ProductRouter } from "./products.router.js";
+import { PrismaClient } from "../../../generated/prisma/client.js";
+import { CreateProductDTO } from "./dto/create-product.dto.js";
+
+export class ProductService {
+  constructor(private prisma: PrismaClient) {}
+
+  getProducts = async () => {
+    return await this.prisma.product.findMany();
+  };
+
+  createProduct = async (body: CreateProductDTO) => {
+    return await this.prisma.product.create({ data: body });
+  };
+}
+```
+
+4. **Create the Controller** (`src/modules/products/products.controller.ts`):
+
+```typescript
+import { Request, Response } from "express";
 import { ProductService } from "./products.service.js";
 
-export function register(app: Express) {
-  const service = new ProductService(prisma);
-  const controller = new ProductController(service);
-  const router = new ProductRouter(controller, new ValidationMiddleware());
-  app.use("/products", router.getRouter());
+export class ProductController {
+  constructor(private productService: ProductService) {}
+
+  getProducts = async (req: Request, res: Response) => {
+    const result = await this.productService.getProducts();
+    res.status(200).send(result);
+  };
+
+  createProduct = async (req: Request, res: Response) => {
+    const result = await this.productService.createProduct(req.body);
+    res.status(200).send(result);
+  };
+}
+```
+
+5. **Create the Router** (`src/modules/products/products.router.ts`):
+
+```typescript
+import { Router } from "express";
+import { ValidationMiddleware } from "../../middlewares/validation.middleware.js";
+import { CreateProductDTO } from "./dto/create-product.dto.js";
+import { ProductController } from "./products.controller.js";
+
+export class ProductRouter {
+  private router: Router;
+
+  constructor(
+    private productController: ProductController,
+    private validationMiddleware: ValidationMiddleware,
+  ) {
+    this.router = Router();
+    this.initializedRoutes();
+  }
+
+  private initializedRoutes = () => {
+    this.router.get("/", this.productController.getProducts);
+    this.router.post(
+      "/",
+      this.validationMiddleware.validateBody(CreateProductDTO),
+      this.productController.createProduct,
+    );
+  };
+
+  getRouter = () => {
+    return this.router;
+  };
+}
+```
+
+6. **Register the module in `src/app.ts`**:
+
+Add imports at the top of the file:
+
+```typescript
+import { ProductController } from "./modules/products/products.controller.js";
+import { ProductRouter } from "./modules/products/products.router.js";
+import { ProductService } from "./modules/products/products.service.js";
+```
+
+Then update the `registerModules()` method:
+
+```typescript
+private registerModules() {
+  // services
+  const sampleService = new SampleService(prisma);
+  const productService = new ProductService(prisma);
+
+  // controllers
+  const sampleController = new SampleController(sampleService);
+  const productController = new ProductController(productService);
+
+  // middlewares
+  const validationMiddleware = new ValidationMiddleware();
+
+  // routes
+  const sampleRouter = new SampleRouter(sampleController, validationMiddleware);
+  const productRouter = new ProductRouter(productController, validationMiddleware);
+
+  // entry points
+  this.app.use("/samples", sampleRouter.getRouter());
+  this.app.use("/products", productRouter.getRouter());
 }
 ```
 
@@ -186,16 +209,22 @@ npm run dev
 # Endpoints: GET /products, POST /products
 ```
 
-### How Auto-Registration Works
+### How Module Registration Works
 
-The `App` class in `src/app.ts` scans the `/src/modules/` directory at startup:
+The `App` class in `src/app.ts` explicitly registers modules in the `registerModules()` method:
 
-1. Finds all subdirectories in `modules/`
-2. Looks for an `index.ts` file in each
-3. Imports the module
-4. Calls the exported `register(app)` function
+1. **Service Layer**: Create service instances with Prisma client
+2. **Controller Layer**: Create controller instances with service dependencies
+3. **Middleware Layer**: Create shared middleware instances (e.g., validation)
+4. **Router Layer**: Create router instances with controller and middleware dependencies
+5. **Mount Routes**: Register each router with its base path using `app.use()`
 
-No manual imports or registrations needed - just create the folder and `index.ts` file!
+This pattern provides:
+
+- Clear dependency flow
+- Explicit visibility of all registered modules
+- Easy sharing of dependencies (e.g., validation middleware)
+- Better TypeScript support with full type checking
 
 ## Getting Started
 
